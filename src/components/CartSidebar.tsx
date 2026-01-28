@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, X, Trash2, Plus, Minus, Send } from 'lucide-react';
+import { ShoppingCart, X, Trash2, Plus, Minus, Send, Loader2 } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 
@@ -10,10 +10,26 @@ const CartSidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [contactIngame, setContactIngame] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
 
   const { items, removeFromCart, updateQuantity, clearCart, getTotal, getItemCount } =
     useCartStore();
-  const discordWebhookUrl = useSettingsStore((state) => state.discordWebhookUrl);
+
+  // Fetch webhook URL on mount
+  useEffect(() => {
+    const fetchWebhook = async () => {
+      const { data } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'discord_webhook_url')
+        .maybeSingle();
+      
+      if (data?.value) {
+        setWebhookUrl(data.value);
+      }
+    };
+    fetchWebhook();
+  }, [isOpen]);
 
   const handleSubmitOrder = async () => {
     if (!contactIngame.trim()) {
@@ -29,8 +45,37 @@ const CartSidebar = () => {
     setIsSubmitting(true);
 
     try {
+      const total = getTotal();
+
+      // Create order in database
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          contact_ingame: contactIngame,
+          total: total,
+        }])
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Create order items
+      const orderItems = items.map((item) => ({
+        order_id: order.id,
+        product_id: item.product.id,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        price: item.product.price,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
       // Send to Discord webhook if configured
-      if (discordWebhookUrl) {
+      if (webhookUrl) {
         const orderDetails = items
           .map(
             (item) =>
@@ -53,7 +98,7 @@ const CartSidebar = () => {
                 },
                 {
                   name: '💰 Total',
-                  value: `$${getTotal().toLocaleString('pt-BR')}`,
+                  value: `$${total.toLocaleString('pt-BR')}`,
                   inline: true,
                 },
                 {
@@ -70,7 +115,7 @@ const CartSidebar = () => {
           ],
         };
 
-        await fetch(discordWebhookUrl, {
+        await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(embed),
@@ -271,7 +316,10 @@ const CartSidebar = () => {
                     className="btn-vagos w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? (
-                      <span className="animate-pulse">Enviando...</span>
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Enviando...
+                      </>
                     ) : (
                       <>
                         <Send className="w-5 h-5" />

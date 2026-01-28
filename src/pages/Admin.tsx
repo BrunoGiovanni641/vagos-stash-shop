@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus,
   Trash2,
@@ -9,32 +10,55 @@ import {
   Package,
   Settings,
   Image as ImageIcon,
+  LogOut,
+  Loader2,
+  Shield,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { useProductStore } from '@/stores/productStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useAuth } from '@/hooks/useAuth';
+import { useProducts, useAddProduct, useUpdateProduct, useDeleteProduct, Product } from '@/hooks/useProducts';
+import { useDiscordWebhook, useUpdateDiscordWebhook } from '@/hooks/useSettings';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Product } from '@/types/product';
 import { toast } from 'sonner';
 
 const Admin = () => {
-  const { products, addProduct, updateProduct, deleteProduct } = useProductStore();
-  const { discordWebhookUrl, setDiscordWebhookUrl } = useSettingsStore();
+  const navigate = useNavigate();
+  const { user, isAdmin, isLoading: authLoading, signOut } = useAuth();
+  
+  const { data: products, isLoading: productsLoading } = useProducts();
+  const { data: webhookUrl, isLoading: webhookLoading } = useDiscordWebhook();
+  
+  const addProductMutation = useAddProduct();
+  const updateProductMutation = useUpdateProduct();
+  const deleteProductMutation = useDeleteProduct();
+  const updateWebhookMutation = useUpdateDiscordWebhook();
 
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [webhookInput, setWebhookInput] = useState(discordWebhookUrl);
+  const [webhookInput, setWebhookInput] = useState('');
 
   const [newProduct, setNewProduct] = useState({
     name: '',
     description: '',
     price: 0,
-    imageUrl: '',
+    image_url: '',
   });
 
   const [editProduct, setEditProduct] = useState<Partial<Product>>({});
+
+  useEffect(() => {
+    if (webhookUrl !== undefined) {
+      setWebhookInput(webhookUrl);
+    }
+  }, [webhookUrl]);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/auth');
+    }
+  }, [user, authLoading, navigate]);
 
   const handleAddProduct = () => {
     if (!newProduct.name.trim() || newProduct.price <= 0) {
@@ -42,10 +66,15 @@ const Admin = () => {
       return;
     }
 
-    addProduct(newProduct);
-    setNewProduct({ name: '', description: '', price: 0, imageUrl: '' });
+    addProductMutation.mutate({
+      name: newProduct.name,
+      description: newProduct.description || undefined,
+      price: newProduct.price,
+      image_url: newProduct.image_url || undefined,
+    });
+    
+    setNewProduct({ name: '', description: '', price: 0, image_url: '' });
     setIsAddingProduct(false);
-    toast.success('Produto adicionado com sucesso!');
   };
 
   const handleEditProduct = (product: Product) => {
@@ -54,7 +83,7 @@ const Admin = () => {
       name: product.name,
       description: product.description,
       price: product.price,
-      imageUrl: product.imageUrl,
+      image_url: product.image_url,
     });
   };
 
@@ -66,21 +95,75 @@ const Admin = () => {
       return;
     }
 
-    updateProduct(editingProductId, editProduct);
+    updateProductMutation.mutate({
+      id: editingProductId,
+      name: editProduct.name,
+      description: editProduct.description,
+      price: editProduct.price,
+      image_url: editProduct.image_url,
+    });
+    
     setEditingProductId(null);
     setEditProduct({});
-    toast.success('Produto atualizado com sucesso!');
   };
 
   const handleDeleteProduct = (id: string) => {
-    deleteProduct(id);
-    toast.success('Produto removido com sucesso!');
+    deleteProductMutation.mutate(id);
   };
 
   const handleSaveWebhook = () => {
-    setDiscordWebhookUrl(webhookInput);
-    toast.success('Webhook do Discord salvo!');
+    updateWebhookMutation.mutate(webhookInput);
   };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="pt-24 md:pt-28 pb-16 px-4">
+          <div className="container mx-auto max-w-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="street-card p-8 text-center"
+            >
+              <Shield className="w-16 h-16 mx-auto text-destructive mb-4" />
+              <h1 className="font-display text-3xl text-primary mb-4">ACESSO NEGADO</h1>
+              <p className="text-muted-foreground font-body mb-6">
+                Você não tem permissão de administrador para acessar esta página.
+              </p>
+              <div className="space-y-3">
+                <button onClick={() => navigate('/')} className="btn-vagos w-full">
+                  Voltar para a Loja
+                </button>
+                <button onClick={handleSignOut} className="btn-vagos-outline w-full flex items-center justify-center gap-2">
+                  <LogOut className="w-4 h-4" />
+                  Sair
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -90,10 +173,22 @@ const Admin = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-12"
+            className="text-center mb-8"
           >
             <h1 className="vagos-title text-5xl md:text-6xl mb-4">PAINEL ADMIN</h1>
-            <div className="w-24 h-1 bg-gradient-gold mx-auto rounded-full" />
+            <div className="w-24 h-1 bg-gradient-gold mx-auto rounded-full mb-4" />
+            <div className="flex items-center justify-center gap-4">
+              <span className="text-muted-foreground text-sm font-body">
+                Logado como: {user.email}
+              </span>
+              <button
+                onClick={handleSignOut}
+                className="text-destructive hover:text-destructive/80 transition-colors flex items-center gap-1 text-sm"
+              >
+                <LogOut className="w-4 h-4" />
+                Sair
+              </button>
+            </div>
           </motion.div>
 
           {/* Discord Webhook Settings */}
@@ -122,9 +217,18 @@ const Admin = () => {
                     onChange={(e) => setWebhookInput(e.target.value)}
                     placeholder="https://discord.com/api/webhooks/..."
                     className="flex-1 bg-secondary border-primary/30 focus:border-primary text-card-foreground"
+                    disabled={webhookLoading}
                   />
-                  <button onClick={handleSaveWebhook} className="btn-vagos px-4">
-                    <Save className="w-5 h-5" />
+                  <button 
+                    onClick={handleSaveWebhook} 
+                    className="btn-vagos px-4"
+                    disabled={updateWebhookMutation.isPending}
+                  >
+                    {updateWebhookMutation.isPending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5" />
+                    )}
                   </button>
                 </div>
                 <p className="text-muted-foreground text-xs mt-2 font-body">
@@ -225,9 +329,9 @@ const Admin = () => {
                       URL da Imagem
                     </label>
                     <Input
-                      value={newProduct.imageUrl}
+                      value={newProduct.image_url}
                       onChange={(e) =>
-                        setNewProduct({ ...newProduct, imageUrl: e.target.value })
+                        setNewProduct({ ...newProduct, image_url: e.target.value })
                       }
                       placeholder="https://exemplo.com/imagem.jpg"
                       className="bg-muted border-primary/30 focus:border-primary text-card-foreground"
@@ -236,9 +340,14 @@ const Admin = () => {
                 </div>
                 <button
                   onClick={handleAddProduct}
+                  disabled={addProductMutation.isPending}
                   className="btn-vagos mt-4 flex items-center gap-2"
                 >
-                  <Plus className="w-5 h-5" />
+                  {addProductMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Plus className="w-5 h-5" />
+                  )}
                   Adicionar Produto
                 </button>
               </motion.div>
@@ -246,7 +355,11 @@ const Admin = () => {
 
             {/* Products List */}
             <div className="space-y-4">
-              {products.length === 0 ? (
+              {productsLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+                </div>
+              ) : !products || products.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
                   <p className="text-muted-foreground font-body">
@@ -313,11 +426,11 @@ const Admin = () => {
                               URL da Imagem
                             </label>
                             <Input
-                              value={editProduct.imageUrl || ''}
+                              value={editProduct.image_url || ''}
                               onChange={(e) =>
                                 setEditProduct({
                                   ...editProduct,
-                                  imageUrl: e.target.value,
+                                  image_url: e.target.value,
                                 })
                               }
                               className="bg-muted border-primary/30 focus:border-primary text-card-foreground"
@@ -327,9 +440,14 @@ const Admin = () => {
                         <div className="flex gap-2">
                           <button
                             onClick={handleSaveEdit}
+                            disabled={updateProductMutation.isPending}
                             className="btn-vagos py-2 px-4 text-sm flex items-center gap-2"
                           >
-                            <Save className="w-4 h-4" />
+                            {updateProductMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Save className="w-4 h-4" />
+                            )}
                             Salvar
                           </button>
                           <button
@@ -349,9 +467,9 @@ const Admin = () => {
                       <div className="flex items-center gap-4">
                         {/* Product Image */}
                         <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-                          {product.imageUrl ? (
+                          {product.image_url ? (
                             <img
-                              src={product.imageUrl}
+                              src={product.image_url}
                               alt={product.name}
                               className="w-full h-full object-cover"
                             />
@@ -385,9 +503,14 @@ const Admin = () => {
                           </button>
                           <button
                             onClick={() => handleDeleteProduct(product.id)}
+                            disabled={deleteProductMutation.isPending}
                             className="w-10 h-10 rounded-lg bg-destructive/20 text-destructive flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {deleteProductMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
                           </button>
                         </div>
                       </div>
