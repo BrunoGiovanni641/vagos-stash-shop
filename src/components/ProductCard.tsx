@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
-import { ShoppingCart, Plus, Minus } from 'lucide-react';
-import { Product } from '@/types/product';
+import { ShoppingCart } from 'lucide-react';
+import { Product } from '@/hooks/useProducts';
 import { useCartStore } from '@/stores/cartStore';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
 
 interface ProductCardProps {
   product: Product;
@@ -11,19 +12,35 @@ interface ProductCardProps {
 }
 
 const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState('1');
   const addToCart = useCartStore((state) => state.addToCart);
 
-  const handleAddToCart = () => {
-    addToCart(product, quantity);
-    toast.success(`${product.name} adicionado ao carrinho!`, {
-      description: `Quantidade: ${quantity}`,
-    });
-    setQuantity(1);
+  const handleQuantityChange = (value: string) => {
+    // Allow only numbers
+    const numericValue = value.replace(/\D/g, '');
+    setQuantity(numericValue);
   };
 
-  const incrementQuantity = () => setQuantity((q) => q + 1);
-  const decrementQuantity = () => setQuantity((q) => Math.max(1, q - 1));
+  const getValidQuantity = () => {
+    const num = parseInt(quantity, 10);
+    return isNaN(num) || num < 1 ? 1 : num;
+  };
+
+  const handleAddToCart = () => {
+    const qty = getValidQuantity();
+    addToCart({
+      id: product.id,
+      name: product.name,
+      description: product.description || '',
+      price: product.price,
+      imageUrl: product.image_url || '',
+      createdAt: new Date(product.created_at),
+    }, qty);
+    toast.success(`${product.name} adicionado ao carrinho!`, {
+      description: `Quantidade: ${qty}`,
+    });
+    setQuantity('1');
+  };
 
   return (
     <motion.div
@@ -32,20 +49,19 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
       transition={{ duration: 0.5, delay: index * 0.1 }}
       className="street-card overflow-hidden group"
     >
-      {/* Product Image */}
-      <div className="relative h-48 bg-secondary overflow-hidden">
-        {product.imageUrl ? (
+      {/* Product Image - Fixed 256x256 */}
+      <div className="relative flex items-center justify-center bg-secondary overflow-hidden p-4">
+        {product.image_url ? (
           <img
-            src={product.imageUrl}
+            src={product.image_url}
             alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            className="w-64 h-64 object-cover rounded-lg group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
+          <div className="w-64 h-64 flex items-center justify-center bg-gradient-to-br from-secondary to-muted rounded-lg">
             <span className="text-6xl font-display text-primary/30">LV</span>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
       </div>
 
       {/* Product Info */}
@@ -62,26 +78,21 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
           $ {product.price.toLocaleString('pt-BR')}
         </div>
 
-        {/* Quantity Selector */}
+        {/* Quantity Input */}
         <div className="flex items-center gap-3 mb-4">
-          <span className="text-card-foreground/70 text-sm font-heading">Quantidade:</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={decrementQuantity}
-              className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <span className="w-10 text-center font-heading text-lg text-primary">
-              {quantity}
-            </span>
-            <button
-              onClick={incrementQuantity}
-              className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
+          <label className="text-card-foreground/70 text-sm font-heading">Quantidade:</label>
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={quantity}
+            onChange={(e) => handleQuantityChange(e.target.value)}
+            onBlur={() => {
+              if (!quantity || parseInt(quantity) < 1) {
+                setQuantity('1');
+              }
+            }}
+            className="w-20 text-center bg-secondary border-primary/30 focus:border-primary text-card-foreground font-heading text-lg"
+          />
         </div>
 
         {/* Add to Cart Button */}

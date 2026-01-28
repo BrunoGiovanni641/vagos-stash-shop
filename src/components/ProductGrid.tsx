@@ -1,9 +1,34 @@
-import { useProductStore } from '@/stores/productStore';
+import { useProducts, Product } from '@/hooks/useProducts';
 import ProductCard from './ProductCard';
 import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 
 const ProductGrid = () => {
-  const products = useProductStore((state) => state.products);
+  const { data: products, isLoading, error } = useProducts();
+
+  if (isLoading) {
+    return (
+      <section id="produtos" className="py-16 px-4">
+        <div className="container mx-auto flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section id="produtos" className="py-16 px-4">
+        <div className="container mx-auto">
+          <div className="text-center py-16">
+            <p className="text-destructive text-lg font-body">
+              Erro ao carregar produtos. Tente novamente mais tarde.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="produtos" className="py-16 px-4">
@@ -19,7 +44,7 @@ const ProductGrid = () => {
           <div className="w-24 h-1 bg-gradient-gold mx-auto rounded-full" />
         </motion.div>
 
-        {products.length === 0 ? (
+        {!products || products.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-muted-foreground text-lg font-body">
               Nenhum produto disponível no momento.
@@ -27,7 +52,7 @@ const ProductGrid = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {products.map((product, index) => (
+            {products.map((product: Product, index: number) => (
               <ProductCard key={product.id} product={product} index={index} />
             ))}
           </div>
