@@ -18,15 +18,20 @@ const CartSidebar = () => {
   // Fetch webhook URL on mount
   useEffect(() => {
     const fetchWebhook = async () => {
-      const { data } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'discord_webhook_url')
-        .maybeSingle();
-      
-      if (data?.value) {
-        setWebhookUrl(data.value);
-      }
+      const { data, error } = await supabase
+  .from('settings')
+  .select('value')
+  .eq('key', 'discord_webhook_url')
+  .maybeSingle();
+
+if (error) {
+  // Usuário anônimo não pode ler settings → ignora
+  return;
+}
+
+if (data?.value) {
+  setWebhookUrl(data.value);
+}
     };
     fetchWebhook();
   }, [isOpen]);
