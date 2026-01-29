@@ -10,6 +10,7 @@ export interface Product {
   image_url: string | null;
   created_at: string;
   updated_at: string;
+  sort_order: number;
 }
 
 export interface NewProduct {
@@ -26,7 +27,7 @@ export const useProducts = () => {
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('sort_order', { ascending: true });
 
       if (error) throw error;
       return data as Product[];
@@ -104,6 +105,33 @@ export const useDeleteProduct = () => {
     onError: (error: Error) => {
       console.error('Error deleting product:', error);
       toast.error('Erro ao remover produto.');
+    },
+  });
+};
+
+export const useReorderProducts = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (products: { id: string; sort_order: number }[]) => {
+      const updates = products.map(({ id, sort_order }) =>
+        supabase
+          .from('products')
+          .update({ sort_order })
+          .eq('id', id)
+      );
+
+      const results = await Promise.all(updates);
+      const error = results.find((r) => r.error)?.error;
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Ordem dos produtos atualizada!');
+    },
+    onError: (error: Error) => {
+      console.error('Error reordering products:', error);
+      toast.error('Erro ao reordenar produtos.');
     },
   });
 };
