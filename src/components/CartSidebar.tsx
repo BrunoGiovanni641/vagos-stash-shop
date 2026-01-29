@@ -15,23 +15,33 @@ const CartSidebar = () => {
   const { items, removeFromCart, updateQuantity, clearCart, getTotal, getItemCount } =
     useCartStore();
 
-  // Fetch webhook URL on mount
+  // Buscar webhook (se falhar, a compra é bloqueada)
   useEffect(() => {
     const fetchWebhook = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('settings')
         .select('value')
         .eq('key', 'discord_webhook_url')
         .maybeSingle();
 
-      if (data?.value) {
-        setWebhookUrl(data.value);
+      if (error || !data?.value) {
+        console.warn('Webhook não configurado');
+        setWebhookUrl('');
+        return;
       }
+
+      setWebhookUrl(data.value);
     };
+
     fetchWebhook();
   }, [isOpen]);
 
   const handleSubmitOrder = async () => {
+    if (!webhookUrl) {
+      toast.error('Sistema indisponível. Tente novamente mais tarde.');
+      return;
+    }
+
     if (!contactIngame.trim()) {
       toast.error('Por favor, insira seu contato in-game!');
       return;
@@ -47,65 +57,50 @@ const CartSidebar = () => {
     try {
       const total = getTotal();
 
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert([
+      const orderDetails = items
+        .map(
+          (item) =>
+            `• **${item.product.name}** x${item.quantity} - $${(
+              item.product.price * item.quantity
+            ).toLocaleString('pt-BR')}`
+        )
+        .join('\n');
+
+      const embed = {
+        embeds: [
           {
-            contact_ingame: contactIngame,
-            total: total,
-          },
-        ])
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      const orderItems = items.map((item) => ({
-        order_id: order.id,
-        product_id: item.product.id,
-        product_name: item.product.name,
-        quantity: item.quantity,
-        price: item.product.price,
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems);
-
-      if (itemsError) throw itemsError;
-
-      if (webhookUrl) {
-        const orderDetails = items
-          .map(
-            (item) =>
-              `• **${item.product.name}** x${item.quantity} - $${(
-                item.product.price * item.quantity
-              ).toLocaleString('pt-BR')}`
-          )
-          .join('\n');
-
-        const embed = {
-          embeds: [
-            {
-              title: '🛒 Nova Compra - Los Vagos',
-              color: 16761600,
-              fields: [
-                { name: '📦 Produtos', value: orderDetails },
-                { name: '💰 Total', value: `$${total.toLocaleString('pt-BR')}` },
-                { name: '🎮 Contato In-Game', value: contactIngame },
-              ],
-              footer: { text: 'Los Vagos - Loja Oficial' },
-              timestamp: new Date().toISOString(),
+            title: '🛒 Nova Compra - Los Vagos',
+            color: 16761600,
+            fields: [
+              {
+                name: '📦 Produtos',
+                value: orderDetails,
+                inline: false,
+              },
+              {
+                name: '💰 Total',
+                value: `$${total.toLocaleString('pt-BR')}`,
+                inline: true,
+              },
+              {
+                name: '🎮 Contato In-Game',
+                value: contactIngame,
+                inline: true,
+              },
+            ],
+            footer: {
+              text: 'Los Vagos - Loja Oficial',
             },
-          ],
-        };
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
 
-        await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(embed),
-        });
-      }
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(embed),
+      });
 
       toast.success('Pedido enviado com sucesso!', {
         description: 'Entraremos em contato em breve.',
@@ -115,7 +110,7 @@ const CartSidebar = () => {
       setContactIngame('');
       setIsOpen(false);
     } catch (error) {
-      console.error('Error sending order:', error);
+      console.error('Erro ao enviar webhook:', error);
       toast.error('Erro ao enviar pedido. Tente novamente.');
     } finally {
       setIsSubmitting(false);
@@ -126,6 +121,7 @@ const CartSidebar = () => {
 
   return (
     <>
+      {/* Cart Button */}
       <button
         onClick={() => setIsOpen(true)}
         className="fixed bottom-6 right-6 z-40 btn-vagos rounded-full w-16 h-16 flex items-center justify-center animate-pulse-gold"
