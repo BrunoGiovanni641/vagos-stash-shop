@@ -15,33 +15,23 @@ const CartSidebar = () => {
   const { items, removeFromCart, updateQuantity, clearCart, getTotal, getItemCount } =
     useCartStore();
 
-  // Buscar webhook (se falhar, a compra é bloqueada)
+  // Fetch webhook URL on mount
   useEffect(() => {
     const fetchWebhook = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('settings')
         .select('value')
         .eq('key', 'discord_webhook_url')
         .maybeSingle();
-
-      if (error || !data?.value) {
-        console.warn('Webhook não configurado');
-        setWebhookUrl('');
-        return;
+      
+      if (data?.value) {
+        setWebhookUrl(data.value);
       }
-
-      setWebhookUrl(data.value);
     };
-
     fetchWebhook();
   }, [isOpen]);
 
   const handleSubmitOrder = async () => {
-    if (!webhookUrl) {
-      toast.error('Sistema indisponível. Tente novamente mais tarde.');
-      return;
-    }
-
     if (!contactIngame.trim()) {
       toast.error('Por favor, insira seu contato in-game!');
       return;
@@ -57,50 +47,80 @@ const CartSidebar = () => {
     try {
       const total = getTotal();
 
-      const orderDetails = items
-        .map(
-          (item) =>
-            `• **${item.product.name}** x${item.quantity} - $${(
-              item.product.price * item.quantity
-            ).toLocaleString('pt-BR')}`
-        )
-        .join('\n');
+      // Create order in database
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          contact_ingame: contactIngame,
+          total: total,
+        }])
+        .select()
+        .single();
 
-      const embed = {
-        embeds: [
-          {
-            title: '🛒 Nova Compra - Los Vagos',
-            color: 16761600,
-            fields: [
-              {
-                name: '📦 Produtos',
-                value: orderDetails,
-                inline: false,
+      if (orderError) throw orderError;
+
+      // Create order items
+      const orderItems = items.map((item) => ({
+        order_id: order.id,
+        product_id: item.product.id,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        price: item.product.price,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
+      // Send to Discord webhook if configured
+      if (webhookUrl) {
+        const orderDetails = items
+          .map(
+            (item) =>
+              `• **${item.product.name}** x${item.quantity} - $${(
+                item.product.price * item.quantity
+              ).toLocaleString('pt-BR')}`
+          )
+          .join('\n');
+
+        const embed = {
+          embeds: [
+            {
+              title: '🛒 Nova Compra - Los Vagos',
+              color: 16761600, // Gold color
+              fields: [
+                {
+                  name: '📦 Produtos',
+                  value: orderDetails,
+                  inline: false,
+                },
+                {
+                  name: '💰 Total',
+                  value: `$${total.toLocaleString('pt-BR')}`,
+                  inline: true,
+                },
+                {
+                  name: '🎮 Contato In-Game',
+                  value: contactIngame,
+                  inline: true,
+                },
+              ],
+              footer: {
+                text: 'Los Vagos - Loja Oficial',
               },
-              {
-                name: '💰 Total',
-                value: `$${total.toLocaleString('pt-BR')}`,
-                inline: true,
-              },
-              {
-                name: '🎮 Contato In-Game',
-                value: contactIngame,
-                inline: true,
-              },
-            ],
-            footer: {
-              text: 'Los Vagos - Loja Oficial',
+              timestamp: new Date().toISOString(),
             },
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      };
+          ],
+        };
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(embed),
-      });
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(embed),
+        });
+      }
 
       toast.success('Pedido enviado com sucesso!', {
         description: 'Entraremos em contato em breve.',
@@ -110,7 +130,7 @@ const CartSidebar = () => {
       setContactIngame('');
       setIsOpen(false);
     } catch (error) {
-      console.error('Erro ao enviar webhook:', error);
+      console.error('Error sending order:', error);
       toast.error('Erro ao enviar pedido. Tente novamente.');
     } finally {
       setIsSubmitting(false);
@@ -134,6 +154,7 @@ const CartSidebar = () => {
         )}
       </button>
 
+      {/* Sidebar Overlay */}
       <AnimatePresence>
         {isOpen && (
           <>
@@ -185,6 +206,7 @@ const CartSidebar = () => {
                       className="bg-secondary/50 rounded-lg p-4 border border-border"
                     >
                       <div className="flex gap-4">
+                        {/* Product Image */}
                         <div className="w-20 h-20 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                           {item.product.imageUrl ? (
                             <img
@@ -201,6 +223,7 @@ const CartSidebar = () => {
                           )}
                         </div>
 
+                        {/* Product Info */}
                         <div className="flex-1">
                           <h3 className="font-heading text-primary font-semibold">
                             {item.product.name}
@@ -209,6 +232,7 @@ const CartSidebar = () => {
                             ${item.product.price.toLocaleString('pt-BR')} cada
                           </p>
 
+                          {/* Quantity Controls */}
                           <div className="flex items-center gap-2 mt-2">
                             <button
                               onClick={() =>
@@ -235,6 +259,7 @@ const CartSidebar = () => {
                           </div>
                         </div>
 
+                        {/* Remove Button */}
                         <button
                           onClick={() => removeFromCart(item.product.id)}
                           className="w-8 h-8 rounded-lg bg-destructive/20 text-destructive flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors"
@@ -243,6 +268,7 @@ const CartSidebar = () => {
                         </button>
                       </div>
 
+                      {/* Subtotal */}
                       <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
                         <span className="text-sm text-muted-foreground font-body">
                           Subtotal:
