@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, LogIn, UserPlus, AlertCircle } from 'lucide-react';
+import { Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -12,12 +12,10 @@ const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { user, isLoading, signIn, signUp } = useAuth();
+  const { user, isLoading, signIn } = useAuth();
   
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,11 +42,6 @@ const Auth = () => {
       return false;
     }
 
-    if (!isLogin && password !== confirmPassword) {
-      setError('As senhas não coincidem.');
-      return false;
-    }
-
     return true;
   };
 
@@ -61,30 +54,16 @@ const Auth = () => {
     setError('');
 
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            setError('Email ou senha incorretos.');
-          } else {
-            setError(error.message);
-          }
+      const { error } = await signIn(email, password);
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          setError('Email ou senha incorretos.');
         } else {
-          toast.success('Login realizado com sucesso!');
-          navigate('/admin');
+          setError(error.message);
         }
       } else {
-        const { error } = await signUp(email, password);
-        if (error) {
-          if (error.message.includes('User already registered')) {
-            setError('Este email já está cadastrado.');
-          } else {
-            setError(error.message);
-          }
-        } else {
-          toast.success('Conta criada com sucesso! Você já está logado.');
-          navigate('/admin');
-        }
+        toast.success('Login realizado com sucesso!');
+        navigate('/admin');
       }
     } catch (err) {
       setError('Ocorreu um erro. Tente novamente.');
@@ -112,7 +91,7 @@ const Auth = () => {
           <div className="text-center mb-8">
             <h1 className="vagos-title text-4xl md:text-5xl mb-2">LOS VAGOS</h1>
             <p className="text-muted-foreground font-body">
-              {isLogin ? 'Acesse o painel administrativo' : 'Crie sua conta de administrador'}
+              Acesse o painel administrativo
             </p>
           </div>
 
@@ -162,28 +141,6 @@ const Auth = () => {
               </div>
             </div>
 
-            {!isLogin && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-              >
-                <label className="block text-sm font-heading text-card-foreground mb-2">
-                  Confirmar Senha
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="pl-11 bg-secondary border-primary/30 focus:border-primary text-card-foreground"
-                    required
-                  />
-                </div>
-              </motion.div>
-            )}
-
             <button
               type="submit"
               disabled={isSubmitting}
@@ -191,33 +148,14 @@ const Auth = () => {
             >
               {isSubmitting ? (
                 <div className="animate-spin w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full" />
-              ) : isLogin ? (
+              ) : (
                 <>
                   <LogIn className="w-5 h-5" />
                   Entrar
                 </>
-              ) : (
-                <>
-                  <UserPlus className="w-5 h-5" />
-                  Criar Conta
-                </>
               )}
             </button>
           </form>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError('');
-              }}
-              className="text-primary hover:text-primary/80 transition-colors font-heading text-sm"
-            >
-              {isLogin
-                ? 'Não tem conta? Cadastre-se'
-                : 'Já tem conta? Faça login'}
-            </button>
-          </div>
 
           <div className="mt-6 pt-6 border-t border-border">
             <button
