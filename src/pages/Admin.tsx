@@ -2,26 +2,39 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
   Plus,
-  Trash2,
-  Edit3,
-  Save,
   X,
   Package,
   Settings,
-  Image as ImageIcon,
   LogOut,
   Loader2,
   Shield,
+  Save,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/hooks/useAuth';
-import { useProducts, useAddProduct, useUpdateProduct, useDeleteProduct, Product } from '@/hooks/useProducts';
+import { useProducts, useAddProduct, useUpdateProduct, useDeleteProduct, useReorderProducts, Product } from '@/hooks/useProducts';
 import { useDiscordWebhook, useUpdateDiscordWebhook } from '@/hooks/useSettings';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import SortableProductItem from '@/components/admin/SortableProductItem';
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -34,11 +47,19 @@ const Admin = () => {
   const updateProductMutation = useUpdateProduct();
   const deleteProductMutation = useDeleteProduct();
   const updateWebhookMutation = useUpdateDiscordWebhook();
+  const reorderProductsMutation = useReorderProducts();
 
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [webhookInput, setWebhookInput] = useState('');
+  const [localProducts, setLocalProducts] = useState<Product[]>([]);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   const [newProduct, setNewProduct] = useState({
     name: '',
     description: '',
@@ -55,10 +76,39 @@ const Admin = () => {
   }, [webhookUrl]);
 
   useEffect(() => {
+    if (products) {
+      setLocalProducts(products);
+    }
+  }, [products]);
+
+  useEffect(() => {
     if (!authLoading && !user) {
       navigate('/auth');
     }
   }, [user, authLoading, navigate]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      setLocalProducts((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+
+        const newItems = arrayMove(items, oldIndex, newIndex);
+
+        // Update sort_order for all items
+        const updates = newItems.map((item, index) => ({
+          id: item.id,
+          sort_order: index + 1,
+        }));
+
+        reorderProductsMutation.mutate(updates);
+
+        return newItems;
+      });
+    }
+  };
 
   const handleAddProduct = () => {
     if (!newProduct.name.trim() || newProduct.price <= 0) {
@@ -359,7 +409,7 @@ const Admin = () => {
                 <div className="text-center py-8">
                   <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
                 </div>
-              ) : !products || products.length === 0 ? (
+              ) : !localProducts || localProducts.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
                   <p className="text-muted-foreground font-body">
@@ -367,156 +417,37 @@ const Admin = () => {
                   </p>
                 </div>
               ) : (
-                products.map((product) => (
-                  <motion.div
-                    key={product.id}
-                    layout
-                    className="bg-secondary/30 rounded-lg p-4 border border-border hover:border-primary/30 transition-colors"
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={localProducts.map((p) => p.id)}
+                    strategy={verticalListSortingStrategy}
                   >
-                    {editingProductId === product.id ? (
-                      // Edit Mode
-                      <div className="space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <label className="block text-sm font-heading text-card-foreground mb-1">
-                              Nome
-                            </label>
-                            <Input
-                              value={editProduct.name || ''}
-                              onChange={(e) =>
-                                setEditProduct({ ...editProduct, name: e.target.value })
-                              }
-                              className="bg-muted border-primary/30 focus:border-primary text-card-foreground"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-heading text-card-foreground mb-1">
-                              Preço ($)
-                            </label>
-                            <Input
-                              type="number"
-                              value={editProduct.price || ''}
-                              onChange={(e) =>
-                                setEditProduct({
-                                  ...editProduct,
-                                  price: parseFloat(e.target.value) || 0,
-                                })
-                              }
-                              className="bg-muted border-primary/30 focus:border-primary text-card-foreground"
-                            />
-                          </div>
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-heading text-card-foreground mb-1">
-                              Descrição
-                            </label>
-                            <Textarea
-                              value={editProduct.description || ''}
-                              onChange={(e) =>
-                                setEditProduct({
-                                  ...editProduct,
-                                  description: e.target.value,
-                                })
-                              }
-                              className="bg-muted border-primary/30 focus:border-primary text-card-foreground resize-none"
-                              rows={2}
-                            />
-                          </div>
-                          <div className="md:col-span-2">
-                            <label className="block text-sm font-heading text-card-foreground mb-1">
-                              URL da Imagem
-                            </label>
-                            <Input
-                              value={editProduct.image_url || ''}
-                              onChange={(e) =>
-                                setEditProduct({
-                                  ...editProduct,
-                                  image_url: e.target.value,
-                                })
-                              }
-                              className="bg-muted border-primary/30 focus:border-primary text-card-foreground"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSaveEdit}
-                            disabled={updateProductMutation.isPending}
-                            className="btn-vagos py-2 px-4 text-sm flex items-center gap-2"
-                          >
-                            {updateProductMutation.isPending ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Save className="w-4 h-4" />
-                            )}
-                            Salvar
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingProductId(null);
-                              setEditProduct({});
-                            }}
-                            className="btn-vagos-outline py-2 px-4 text-sm flex items-center gap-2"
-                          >
-                            <X className="w-4 h-4" />
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      // View Mode
-                      <div className="flex items-center gap-4">
-                        {/* Product Image */}
-                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-                          {product.image_url ? (
-                            <img
-                              src={product.image_url}
-                              alt={product.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Product Info */}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-heading text-lg text-primary font-semibold truncate">
-                            {product.name}
-                          </h3>
-                          <p className="text-sm text-muted-foreground truncate font-body">
-                            {product.description || 'Sem descrição'}
-                          </p>
-                          <p className="text-primary font-heading font-semibold mt-1">
-                            ${product.price.toLocaleString('pt-BR')}
-                          </p>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditProduct(product)}
-                            className="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProduct(product.id)}
-                            disabled={deleteProductMutation.isPending}
-                            className="w-10 h-10 rounded-lg bg-destructive/20 text-destructive flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors"
-                          >
-                            {deleteProductMutation.isPending ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                ))
+                    {localProducts.map((product) => (
+                      <SortableProductItem
+                        key={product.id}
+                        product={product}
+                        isEditing={editingProductId === product.id}
+                        editProduct={editProduct}
+                        onEdit={handleEditProduct}
+                        onSaveEdit={handleSaveEdit}
+                        onCancelEdit={() => {
+                          setEditingProductId(null);
+                          setEditProduct({});
+                        }}
+                        onDelete={handleDeleteProduct}
+                        onEditChange={(updates) =>
+                          setEditProduct({ ...editProduct, ...updates })
+                        }
+                        isUpdating={updateProductMutation.isPending}
+                        isDeleting={deleteProductMutation.isPending}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           </motion.section>
