@@ -129,12 +129,14 @@ const CartSidebar = () => {
       clearCart();
       setContactIngame('');
       setIsOpen(false);
-    } catch (error) {
-      console.error('Error sending order:', error);
-      toast.error('Erro ao enviar pedido. Tente novamente.');
-    } finally {
-      setIsSubmitting(false);
-    }
+} catch (error: any) {
+  console.error('ERRO REAL 👉', error);
+  toast.error(
+    error?.message ||
+    error?.error_description ||
+    JSON.stringify(error)
+  );
+}
   };
 
   const itemCount = getItemCount();
